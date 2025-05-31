@@ -4,32 +4,10 @@ import pandas as pd
 import pickle
 import numpy as np
 import holidays
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
-
-csv_te_voorspellen = './data csv/TEST_kijkcijfers.csv'
-
-def testCSV(csv):
-    df = pd.read_csv(csv, delimiter=';')
-    # Kolommen hernoemen
-    df = df.rename(columns={
-        'Programma': 'description',
-        'Zender': 'channel',
-        'Datum ': 'dateDiff',
-        'Start ': 'startTime',
-        'Duur': 'rLength'
-    })
-    # Datum en tijd samenvoegen tot datetime
-    df['dateDiff'] = pd.to_datetime(df['dateDiff'], dayfirst=True)
-    # Starttijd naar HH:MM:SS
-    df['startTime'] = df['startTime'].str[:8]
-    # Duur naar HH:MM:SS
-    df['rLength'] = df['rLength'].apply(lambda x: str(pd.to_timedelta(x)))
-    # Voeg dummy kolommen toe als nodig
-    df['ranking'] = 0
-    df['live'] = 0
-    df['Kijkers'] = None
-
-    return df[['dateDiff', 'ranking', 'description', 'channel', 'startTime', 'rLength', 'live']]
+csv_te_voorspellen = './data csv/Input_voor_examen (1).csv'
 
 def ophalenKijkcijferData(startDate, endDate):
   print(f"Ophalen kijkcijfer-data van {startDate.year}-{startDate.month}-{startDate.day} tot {endDate.year}-{endDate.month}-{endDate.day}")
@@ -142,6 +120,38 @@ def ophalenWeerData(startDate, endDate):
     else:
         return pd.DataFrame()
 
+def testCSV(csv):
+    df = pd.read_csv(csv, delimiter=';')
+    # Kolommen hernoemen
+    df = df.rename(columns={
+        'Programma': 'description',
+        'Zender': 'channel',
+        'Datum': 'dateDiff',
+        'Start': 'startTime',
+        'Duur': 'rLength'
+    })
+    # Datum en tijd samenvoegen tot datetime
+    df['dateDiff'] = pd.to_datetime(df['dateDiff'], dayfirst=True)
+    # Starttijd naar HH:MM:SS
+    df['startTime'] = df['startTime'].str[:8]
+    # Duur naar HH:MM:SS
+    df['rLength'] = df['rLength'].apply(lambda x: str(pd.to_timedelta(x)))
+    # Voeg dummy kolommen toe als nodig
+    df['ranking'] = 0
+    df['live'] = 0
+    df['Kijkers'] = None
+
+    return df[['dateDiff', 'ranking', 'description', 'channel', 'startTime', 'rLength', 'live']]
+
+teVoorspellen = testCSV(csv_te_voorspellen)
+
+teVoorspellen['dateDiff'] = pd.to_datetime(teVoorspellen['dateDiff'])
+
+end_date = teVoorspellen['dateDiff'].max()
+start_date = end_date - timedelta(weeks=3)
+histKijkcijfers = ophalenKijkcijferData(start_date, end_date - timedelta(days=1))
+histWeerdata = ophalenWeerData(start_date, end_date)
+
 def cleanKijkcijferData(df):
 
     # Zet 'Kijkers' kolom, als 'rateInK' bestaat
@@ -227,38 +237,20 @@ def cleanWeerData(df):
 
   return weerData
 
+histWeerdataClean = cleanWeerData(histWeerdata)
+histKijkcijfersClean = cleanKijkcijferData(histKijkcijfers)
+teVoorspellenClean = cleanKijkcijferData(teVoorspellen)
+
 def mergen(kijkcijfers, weer):
   kijkcijfersWeer = pd.merge(kijkcijfers, weer, on=['date', 'hour'], how='left')
-  kijkcijfersWeer = kijkcijfersWeer[['FullDate', 'date', 'hour', 'Kanaal', 'Programma', 'Lengte_sec', 'Kijkers', 'Temperatuur', 'Gevoelstemp', 'Regen', 'Sneeuw', 'Weercode', 'Bewolking', 'Windsnelheid', 'Zonnenschijn', 'isFeestdag', 'Weekdag', 'isWeekend', 'Seizoen']]
+  kijkcijfersWeer = kijkcijfersWeer[['FullDate', 'date', 'hour', 'Kanaal', 'Programma', 'Lengte_sec', 'Kijkers', 'Temperatuur', 'Gevoelstemp', 'Regen', 'Sneeuw', 'Weercode', 'Bewolking', 'Windsnelheid', 'Zonnenschijn']]
   kijkcijfersWeer.dropna(inplace=True)
   return kijkcijfersWeer
 
-def oneHot(df):
-  with open('./models/oneHotEncoder.pkl', 'rb') as oneHotFile:
-    oneHotEnc = pickle.load(oneHotFile)
+histKijkcijfersWeer = mergen(histKijkcijfersClean, histWeerdataClean)
 
-  lageKard = df[[ 'hour','Kanaal', 'isFeestdag', 'Weekdag', 'Seizoen']]
-  dfOneHot = oneHotEnc.transform(lageKard)
-
-  oneHotOutp = pd.DataFrame(dfOneHot.toarray(), 
-                            columns=oneHotEnc.get_feature_names_out(), 
-                            index=lageKard.index)
-
-  df = df.drop(columns=['hour', 'Kanaal', 'isFeestdag', 'Weekdag', 'Seizoen'])
-  df = pd.concat([df, oneHotOutp], axis = 1)
-  return df
-
-def target(df):
-  #target encoding voor medium kardinaliteiten
-  with open('./models/oneHotTarget.pkl', 'rb') as f:
-    targetEnc = pickle.load(f)
-  medKardinaliteit = df[['date', 'Programma', 'Lengte_sec', 'Temperatuur', 'Gevoelstemp', 'Regen', 'Bewolking', 'Windsnelheid', 'Zonnenschijn']]
-  #verdere feature engineering op vorig model
-  target = targetEnc.transform(medKardinaliteit)
-  df = df.drop(columns=['date', 'Programma', 'Lengte_sec', 'Temperatuur', 'Gevoelstemp', 'Regen', 'Bewolking', 'Windsnelheid', 'Zonnenschijn'])
-  f = pd.concat([df, target], axis=1)
-
-  return f
+teVoorspellenData = pd.merge(teVoorspellenClean, histWeerdataClean, on=['date', 'hour', 'minute'], how='left')
+teVoorspellenData = teVoorspellenData.drop(columns=['datetime', 'minute'])
 
 def tijdFeatures(df):
     df['date'] = pd.to_datetime(df['date'])
@@ -290,119 +282,81 @@ def seizoenFinder(datum):
             return seizoen
     return 'winter'
 
-def createLag(df, n):
-  for i in range(1,n+1):
-    df[f'KijkersLag{i}'] = df.sort_values('FullDate').groupby('Programma')['Kijkers'].shift(i).ffill()
+teVoorspellenData = tijdFeatures(teVoorspellenData)
+histKijkcijfersWeer = tijdFeatures(histKijkcijfersWeer)
+histWeerdataClean = tijdFeatures(histWeerdataClean)
+histWeerdataClean.drop(columns=['minute'], inplace=True)
+
+def lagFeatures(df, hist):
+  df['Kijkers'] = None
+  df['teVoorspellen'] = True
+  hist['teVoorspellen'] = False
+  df = pd.concat([hist, df], ignore_index=True)
+  # Sorteer op tijd binnen elke groep
+  df = df.sort_values(['Programma', 'FullDate'])
+
+  df = df.sort_values(['Programma', 'FullDate'])
+
+  # Bereken lag features per programma
+  for i in range(1, 4):
+      df[f'Kijkers_lag_{i}'] = df.groupby('Programma')['Kijkers'].shift(i)
+      df[f'Kijkers_lag_{i}'] = df[f'Kijkers_lag_{i}'].fillna(df.groupby('Programma')['Kijkers'].transform('mean'))
+
   return df
 
-def lagFeatures(predDf, histKijkcijferWeerDf):
-    predDf = predDf.copy()
-    predDf['Kijkers'] = np.nan
-    predDf['teVoorspellen'] = True
-    histKijkcijferWeerDf = histKijkcijferWeerDf.copy()
-    histKijkcijferWeerDf['teVoorspellen'] = False
+pred_hist_df = lagFeatures(teVoorspellenData, histKijkcijfersWeer)
+print("lagfeatures toevoegen...")
+# display(pred_hist_df.dtypes)
+pred_hist_df = pred_hist_df[pred_hist_df['teVoorspellen']]
+pred_hist_df.drop(columns=['teVoorspellen'], inplace=True)
 
-    for df in [predDf, histKijkcijferWeerDf]:
-      df['Programma'] = df['Programma'].str.strip().str.lower()
+def oneHot(df):
+  with open('./models/oneHotEncoder.pkl', 'rb') as oneHotFile:
+    oneHotEnc = pickle.load(oneHotFile)
 
-    combined = pd.concat([histKijkcijferWeerDf, predDf], ignore_index=True)
-    combined = combined.sort_values(['Programma', 'FullDate']).reset_index(drop=True)
+  lageKard = df[[ 'hour','Kanaal', 'isFeestdag', 'Weekdag', 'Seizoen']]
+  dfOneHot = oneHotEnc.transform(lageKard)
 
-    for i in range(1, 4):
-        combined[f'KijkersLag{i}'] = combined.groupby('Programma')['Kijkers'].shift(i)
-        combined[f'KijkersLag{i}'] = combined.groupby('Programma')[f'KijkersLag{i}'].transform(lambda x: x.fillna(x.mean()))
+  oneHotOutp = pd.DataFrame(dfOneHot.toarray(), 
+                            columns=oneHotEnc.get_feature_names_out(), 
+                            index=lageKard.index)
 
-    for p in predDf['Programma'].unique():
-      print(combined[combined['Programma'] == p][['FullDate', 'Kijkers', 'KijkersLag1', 'KijkersLag2', 'KijkersLag3']])
-    
-    print("Lag features toegevoegd:")
-    print(combined)
-    return combined
+  df = df.drop(columns=['hour', 'Kanaal', 'isFeestdag', 'Weekdag', 'Seizoen'])
+  df = pd.concat([df, oneHotOutp], axis = 1)
+  return df
 
-def voorbereiding(toPredictData, histKijkcijfersWeer):
-    # Vervang spaties door underscores in beide DataFrames
-    toPredictData = toPredictData.copy()
-    histKijkcijfersWeer = histKijkcijfersWeer.copy()
-    toPredictData['Kanaal'] = toPredictData['Kanaal'].str.replace(' ', '_')
-    histKijkcijfersWeer['Kanaal'] = histKijkcijfersWeer['Kanaal'].str.replace(' ', '_')
-    # tijd features toevoegen
-    toPredictData = tijdFeatures(toPredictData)
-    histKijkcijfersWeer = tijdFeatures(histKijkcijfersWeer)
+def target(df):
+  #target encoding voor medium kardinaliteiten
+  with open('./models/oneHotTarget.pkl', 'rb') as f:
+    targetEnc = pickle.load(f)
+  medKardinaliteit = df[['date', 'Programma', 'Lengte_sec', 'Temperatuur', 'Gevoelstemp', 'Regen', 'Bewolking', 'Windsnelheid', 'Zonnenschijn']]
+  #verdere feature engineering op vorig model
+  target = targetEnc.transform(medKardinaliteit)
+  df = df.drop(columns=['date', 'Programma', 'Lengte_sec', 'Temperatuur', 'Gevoelstemp', 'Regen', 'Bewolking', 'Windsnelheid', 'Zonnenschijn'])
+  f = pd.concat([df, target], axis=1)
 
-    # lag features toevoegen
-    pred_hist_df = lagFeatures(toPredictData, histKijkcijfersWeer)
-    print("lagfeatures toegevoegd: ")
-    print(pred_hist_df)
+  return f
 
-    # te voorspellen data er terug uithalen
-    toPredictData = pred_hist_df[pred_hist_df['teVoorspellen']]
+teVoorspellenData = oneHot(pred_hist_df)
+print("onehotencoding...")
+# Target encoding
+targetOneHotEnc = target(teVoorspellenData)
+print("targetencoding...")
 
-    # One hot encoding
-    toPredictData = oneHot(toPredictData)
-    print("onehotencoding: ")
-    print(toPredictData)
-    # Target encoding
-    targetOneHotEnc = target(toPredictData)
-    print("targetencoding: ")
-    print(targetOneHotEnc)
+teVoorspellenProgramma = teVoorspellenData['Programma']
+teVoorspellenData = targetOneHotEnc.select_dtypes(include=[np.number])
 
-    if 'Kijkers' in targetOneHotEnc.columns:
-        targetOneHotEnc = targetOneHotEnc.drop(columns=['Kijkers'])
-
-    # numeric columns selecteren
-    toPredictNumeric = targetOneHotEnc.select_dtypes(include=[np.number])
-    print(f"toPredictNumeric: ")
-    print(toPredictNumeric)
-    
-    return toPredictNumeric
-
-def voorspellingMaken(teVoorspellenData, histKijkcijfersWeer):
-  preprocessed_data = voorbereiding(teVoorspellenData, histKijkcijfersWeer)
-
-  preprocessed_df = pd.DataFrame(preprocessed_data)
-
-  try:
+try:
     with open('./models/optunaBestModel.pkl', 'rb') as file:
-        lightgbm = pickle.load(file)
-  except Exception as e:
-      print("Kon model niet laden:", e)
-      exit(1)
+        lgbm = pickle.load(file)
+except Exception as e:
+    print("Kon model niet laden:", e)
+    exit(1)
 
-  predictions = lightgbm.predict(preprocessed_df)
-  
-  return predictions
-
-teVoorspellen = testCSV(csv_te_voorspellen)
-
-teVoorspellen['dateDiff'] = pd.to_datetime(teVoorspellen['dateDiff'])
-
-end_date = teVoorspellen['dateDiff'].max()
-start_date = end_date - timedelta(weeks=3)
-histKijkcijfers = ophalenKijkcijferData(start_date, end_date - timedelta(days=1))
-histWeerdata = ophalenWeerData(start_date, end_date)
-# print(teVoorspellen.columns)
-
-X_test = teVoorspellen
-
-histWeerdataClean = cleanWeerData(histWeerdata)
-histKijkcijfersClean = cleanKijkcijferData(histKijkcijfers)
-# Merge historische kijkcijfers en weerdata
-histKijkcijfersWeer = mergen(histKijkcijfersClean, histWeerdataClean)
-# te voorspellen data en weerdata mergen
-teVoorspellenClean = cleanKijkcijferData(teVoorspellen)
-teVoorspellenClean = teVoorspellenClean.drop(columns=['minute'])
-teVoorspellenData = pd.merge(teVoorspellenClean, histWeerdataClean, on=['date', 'hour'], how='left')
-teVoorspellenData = teVoorspellenData.drop(columns=['datetime', 'minute'])
-print(teVoorspellenData.head())
-print(histKijkcijfersWeer.head())
-#print("Aantal rijen in histKijkcijferWeerDf:", len(histKijkcijfersWeer))
-#print(histKijkcijfersWeer.head()) 
-
-prediction = voorspellingMaken(teVoorspellenData, histKijkcijfersWeer)
-
+predictions = lgbm.predict(teVoorspellenData)
+predictions = np.round(predictions).astype(int)
 resultaten = pd.DataFrame({
-    'Predicted': prediction,
-    'Programma': teVoorspellenData['Programma'],
+    'Predicted': predictions,
+    'Programma': teVoorspellenProgramma,
 })
-
-print("Voorspellingen: \n", resultaten)
+print(resultaten)
