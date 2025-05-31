@@ -283,9 +283,12 @@ def seizoenFinder(datum):
     return 'winter'
 
 teVoorspellenData = tijdFeatures(teVoorspellenData)
-histKijkcijfersWeer = tijdFeatures(histKijkcijfersWeer)
+histKijkcijfersWeerNew = tijdFeatures(histKijkcijfersWeer)
 histWeerdataClean = tijdFeatures(histWeerdataClean)
 histWeerdataClean.drop(columns=['minute'], inplace=True)
+histKijkcijfersWeer = pd.read_csv('./data csv/kijkcijfersWeer.csv')
+histKijkcijfersWeer.drop(columns=['Unnamed: 0'], inplace=True)
+histKijkcijfersWeer = pd.concat([histKijkcijfersWeerNew, histKijkcijfersWeer]).drop_duplicates()
 
 def lagFeatures(df, hist):
   df['Kijkers'] = None
